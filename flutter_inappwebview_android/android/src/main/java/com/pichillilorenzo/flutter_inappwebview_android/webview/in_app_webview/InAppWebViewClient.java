@@ -231,11 +231,12 @@ public class InAppWebViewClient extends WebViewClient {
     }
 
     // WebView not storing cookies reliable to local device storage
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-      CookieManager.getInstance().flush();
-    } else {
-      CookieSyncManager.getInstance().sync();
-    }
+    // NOTE: flush method call이 Android System Webview 134버전 이상에서 ANR을 일으키고 있다고 판단하여 주석처리함
+    // if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+    //   CookieManager.getInstance().flush();
+    // } else {
+    //   CookieSyncManager.getInstance().sync();
+    // }
 
     String js = JavaScriptBridgeJS.PLATFORM_READY_JS_SOURCE;
 
