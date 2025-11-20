@@ -428,22 +428,62 @@ public class WebViewChannelDelegate: ChannelDelegate {
             result(true)
             break
         case .callAsyncJavaScript:
-            if let webView = webView, #available(iOS 10.3, *) {
-                if #available(iOS 14.3, *) { // on iOS 14.0, for some reason, it crashes
-                    let functionBody = arguments!["functionBody"] as! String
-                    let functionArguments = arguments!["arguments"] as! [String:Any]
-                    var contentWorld = WKContentWorld.page
-                    if let contentWorldMap = arguments!["contentWorld"] as? [String:Any?] {
-                        contentWorld = WKContentWorld.fromMap(map: contentWorldMap, windowId: webView.windowId)!
+            if let webView = webView {
+                let functionBody = arguments!["functionBody"] as! String
+                let functionArguments = arguments!["arguments"] as! [String:Any]
+                
+                // Build function argument names and values from the dictionary
+                var functionArgumentNamesList: [String] = []
+                var functionArgumentValuesList: [String] = []
+                let keys = functionArguments.keys
+                keys.forEach { (key) in
+                    functionArgumentNamesList.append(key)
+                    functionArgumentValuesList.append("obj.\(key)")
+                }
+                
+                let functionArgumentNames = functionArgumentNamesList.joined(separator: ", ")
+                let functionArgumentValues = functionArgumentValuesList.joined(separator: ", ")
+                let functionArgumentsObj = Util.JSONStringify(value: functionArguments)
+                
+                // Wrap in async IIFE to handle both sync and async functions
+                // The async function will wait for Promises, but evaluateJavascript itself
+                // doesn't wait for the outer Promise. However, we can use a technique where
+                // we return a Promise and let the JavaScript engine handle it.
+                // Actually, evaluateJavascript doesn't wait for Promises, so we need to
+                // handle this differently. We'll wrap the result in a way that works.
+                let source = """
+                (async function(obj) {
+                    try {
+                        var result = await (async function(\(functionArgumentNames)) {
+                            \(functionBody)
+                        })(\(functionArgumentValues));
+                        return {value: result, error: null};
+                    } catch (e) {
+                        return {value: null, error: e ? (e.message || String(e)) : 'Unknown error'};
                     }
-                    webView.callAsyncJavaScript(functionBody: functionBody, arguments: functionArguments, contentWorld: contentWorld) { (value) in
-                        result(value)
+                })(\(functionArgumentsObj));
+                """
+                
+                let contentWorldMap = arguments!["contentWorld"] as? [String:Any?]
+                if #available(iOS 14.0, *), let contentWorldMap = contentWorldMap {
+                    let contentWorld = WKContentWorld.fromMap(map: contentWorldMap, windowId: webView.windowId)!
+                    webView.evaluateJavascript(source: source, contentWorld: contentWorld) { (value) in
+                        // JavaScript 코드에서 항상 {value: ..., error: ...} 형태로 반환하므로
+                        // value는 딕셔너리여야 합니다. 예외 처리를 위해 옵셔널 체이닝 사용
+                        if let resultDict = value as? [String: Any?] {
+                            result(resultDict)
+                        } else {
+                            // 예상치 못한 경우: JavaScript 실행 실패 또는 예외
+                            result(["value": nil, "error": "Unexpected result type"])
+                        }
                     }
                 } else {
-                    let functionBody = arguments!["functionBody"] as! String
-                    let functionArguments = arguments!["arguments"] as! [String:Any]
-                    webView.callAsyncJavaScript(functionBody: functionBody, arguments: functionArguments) { (value) in
-                        result(value)
+                    webView.evaluateJavascript(source: source) { (value) in
+                        if let resultDict = value as? [String: Any?] {
+                            result(resultDict)
+                        } else {
+                            result(["value": nil, "error": "Unexpected result type"])
+                        }
                     }
                 }
             }
