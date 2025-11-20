@@ -78,22 +78,24 @@ public class WebViewChannelDelegate: ChannelDelegate {
             result(true)
             break
         case .evaluateJavascript:
-            if let webView = webView {
-                let source = arguments!["source"] as! String
-                let contentWorldMap = arguments!["contentWorld"] as? [String:Any?]
-                if #available(iOS 14.0, *), let contentWorldMap = contentWorldMap {
-                    let contentWorld = WKContentWorld.fromMap(map: contentWorldMap, windowId: webView.windowId)!
-                    webView.evaluateJavascript(source: source, contentWorld: contentWorld) { (value) in
-                        result(value)
-                    }
-                } else {
-                    webView.evaluateJavascript(source: source) { (value) in
-                        result(value)
-                    }
-                }
-            }
-            else {
+            guard let webView = webView,
+                  webView.superview != nil,
+                  webView.window != nil else {
                 result(nil)
+                return
+            }
+
+            let source = arguments!["source"] as! String
+            let contentWorldMap = arguments!["contentWorld"] as? [String:Any?]
+            if #available(iOS 14.0, *), let contentWorldMap = contentWorldMap {
+                let contentWorld = WKContentWorld.fromMap(map: contentWorldMap, windowId: webView.windowId)!
+                webView.evaluateJavascript(source: source, contentWorld: contentWorld) { (value) in
+                    result(value)
+                }
+            } else {
+                webView.evaluateJavascript(source: source) { (value) in
+                    result(value)
+                }
             }
             break
         case .injectJavascriptFileFromUrl:
@@ -148,15 +150,18 @@ public class WebViewChannelDelegate: ChannelDelegate {
             result(webView?.isLoading ?? false)
             break
         case .takeScreenshot:
-            if let webView = webView, #available(iOS 11.0, *) {
-                let screenshotConfiguration = arguments!["screenshotConfiguration"] as? [String: Any?]
-                webView.takeScreenshot(with: screenshotConfiguration, completionHandler: { (screenshot) -> Void in
-                    result(screenshot)
-                })
-            }
-            else {
+            guard let webView = webView,
+                  webView.superview != nil,
+                  webView.window != nil,
+                  #available(iOS 11.0, *) else {
                 result(nil)
+                return
             }
+
+            let screenshotConfiguration = arguments!["screenshotConfiguration"] as? [String: Any?]
+            webView.takeScreenshot(with: screenshotConfiguration, completionHandler: { (screenshot) -> Void in
+                result(screenshot)
+            })
             break
         case .setSettings:
             if let iabController = webView?.inAppBrowserDelegate as? InAppBrowserWebViewController {
@@ -284,15 +289,18 @@ public class WebViewChannelDelegate: ChannelDelegate {
             result(true)
             break
         case .printCurrentPage:
-            if let webView = webView {
-                let settings = PrintJobSettings()
-                if let settingsMap = arguments!["settings"] as? [String: Any?] {
-                    let _ = settings.parse(settings: settingsMap)
-                }
-                result(webView.printCurrentPage(settings: settings))
-            } else {
+            guard let webView = webView,
+                  webView.superview != nil,
+                  webView.window != nil else {
                 result(nil)
+                return
             }
+
+            let settings = PrintJobSettings()
+            if let settingsMap = arguments!["settings"] as? [String: Any?] {
+                let _ = settings.parse(settings: settingsMap)
+            }
+            result(webView.printCurrentPage(settings: settings))
             break
         case .getContentHeight:
             result(webView?.getContentHeight())
@@ -320,28 +328,32 @@ public class WebViewChannelDelegate: ChannelDelegate {
             result(webView?.hasOnlySecureContent ?? false)
             break
         case .getSelectedText:
-            if let webView = webView {
-                webView.getSelectedText { (value, error) in
-                    if let err = error {
-                        print(err.localizedDescription)
-                        result("")
-                        return
-                    }
-                    result(value)
-                }
-            }
-            else {
+            guard let webView = webView,
+                  webView.superview != nil,
+                  webView.window != nil else {
                 result(nil)
+                return
+            }
+
+            webView.getSelectedText { (value, error) in
+                if let err = error {
+                    print(err.localizedDescription)
+                    result("")
+                    return
+                }
+                result(value)
             }
             break
         case .getHitTestResult:
-            if let webView = webView {
-                webView.getHitTestResult { (hitTestResult) in
-                    result(hitTestResult.toMap())
-                }
-            }
-            else {
+            guard let webView = webView,
+                  webView.superview != nil,
+                  webView.window != nil else {
                 result(nil)
+                return
+            }
+
+            webView.getHitTestResult { (hitTestResult) in
+                result(hitTestResult.toMap())
             }
             break
         case .clearFocus:
@@ -358,17 +370,20 @@ public class WebViewChannelDelegate: ChannelDelegate {
             }
             break
         case .requestFocusNodeHref:
-            if let webView = webView {
-                webView.requestFocusNodeHref { (value, error) in
-                    if let err = error {
-                        print(err.localizedDescription)
-                        result(nil)
-                        return
-                    }
-                    result(value)
-                }
-            } else {
+            guard let webView = webView,
+                  webView.superview != nil,
+                  webView.window != nil else {
                 result(nil)
+                return
+            }
+
+            webView.requestFocusNodeHref { (value, error) in
+                if let err = error {
+                    print(err.localizedDescription)
+                    result(nil)
+                    return
+                }
+                result(value)
             }
             break
         case .requestImageRef:
