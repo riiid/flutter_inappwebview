@@ -443,27 +443,31 @@ public class WebViewChannelDelegate: ChannelDelegate {
             result(true)
             break
         case .callAsyncJavaScript:
-            if let webView = webView, #available(iOS 10.3, *) {
-                if #available(iOS 14.3, *) { // on iOS 14.0, for some reason, it crashes
-                    let functionBody = arguments!["functionBody"] as! String
-                    let functionArguments = arguments!["arguments"] as! [String:Any]
-                    var contentWorld = WKContentWorld.page
-                    if let contentWorldMap = arguments!["contentWorld"] as? [String:Any?] {
-                        contentWorld = WKContentWorld.fromMap(map: contentWorldMap, windowId: webView.windowId)!
-                    }
-                    webView.callAsyncJavaScript(functionBody: functionBody, arguments: functionArguments, contentWorld: contentWorld) { (value) in
-                        result(value)
-                    }
-                } else {
-                    let functionBody = arguments!["functionBody"] as! String
-                    let functionArguments = arguments!["arguments"] as! [String:Any]
-                    webView.callAsyncJavaScript(functionBody: functionBody, arguments: functionArguments) { (value) in
-                        result(value)
-                    }
-                }
-            }
-            else {
+            guard let webView = webView,
+                  webView.superview != nil,
+                  webView.window != nil,
+                  !webView.isLoading,
+                  #available(iOS 10.3, *) else {
                 result(nil)
+                break
+            }
+            
+            if #available(iOS 14.3, *) { // on iOS 14.0, for some reason, it crashes
+                let functionBody = arguments!["functionBody"] as! String
+                let functionArguments = arguments!["arguments"] as! [String:Any]
+                var contentWorld = WKContentWorld.page
+                if let contentWorldMap = arguments!["contentWorld"] as? [String:Any?] {
+                    contentWorld = WKContentWorld.fromMap(map: contentWorldMap, windowId: webView.windowId)!
+                }
+                webView.callAsyncJavaScript(functionBody: functionBody, arguments: functionArguments, contentWorld: contentWorld) { (value) in
+                    result(value)
+                }
+            } else {
+                let functionBody = arguments!["functionBody"] as! String
+                let functionArguments = arguments!["arguments"] as! [String:Any]
+                webView.callAsyncJavaScript(functionBody: functionBody, arguments: functionArguments) { (value) in
+                    result(value)
+                }
             }
             break
         case .createPdf:
