@@ -468,6 +468,10 @@ public class WebViewChannelDelegate: ChannelDelegate {
                 if #available(iOS 14.0, *), let contentWorldMap = contentWorldMap {
                     let contentWorld = WKContentWorld.fromMap(map: contentWorldMap, windowId: webView.windowId)!
                     webView.evaluateJavascript(source: source, contentWorld: contentWorld) { (value) in
+                        // 디버그: value 타입 출력
+                        print("DEBUG - value type: \(type(of: value))")
+                        print("DEBUG - value: \(String(describing: value))")
+
                         // JavaScript 코드에서 항상 {value: ..., error: ...} 형태로 반환하므로
                         // value는 딕셔너리여야 합니다. 예외 처리를 위해 옵셔널 체이닝 사용
                         if let resultDict = value as? [String: Any?] {
@@ -479,6 +483,9 @@ public class WebViewChannelDelegate: ChannelDelegate {
                     }
                 } else {
                     webView.evaluateJavascript(source: source) { (value) in
+                     // 디버그: value 타입 출력
+                        print("DEBUG - value type: \(type(of: value))")
+                        print("DEBUG - value: \(String(describing: value))")
                         if let resultDict = value as? [String: Any?] {
                             result(resultDict)
                         } else {
