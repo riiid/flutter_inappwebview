@@ -142,6 +142,9 @@ final public class InAppWebView extends InputAwareWebView implements InAppWebVie
   public InAppWebViewSettings customSettings = new InAppWebViewSettings();
   public boolean isLoading = false;
   private boolean inFullscreen = false;
+  private boolean isRestoringScrollLock = false;
+  private int lockedScrollX = 0;
+  private int lockedScrollY = 0;
   public float zoomScale = 1.0f;
   public ContentBlockerHandler contentBlockerHandler = new ContentBlockerHandler();
   @Nullable
@@ -350,6 +353,7 @@ final public class InAppWebView extends InputAwareWebView implements InAppWebVie
 
     setVerticalScrollBarEnabled(!customSettings.disableVerticalScroll && customSettings.verticalScrollBarEnabled);
     setHorizontalScrollBarEnabled(!customSettings.disableHorizontalScroll && customSettings.horizontalScrollBarEnabled);
+    syncScrollLockPosition();
 
     if (customSettings.transparentBackground)
       setBackgroundColor(Color.TRANSPARENT);
@@ -542,41 +546,17 @@ final public class InAppWebView extends InputAwareWebView implements InAppWebVie
     }
 
     setOnTouchListener(new OnTouchListener() {
-      float m_downX;
-      float m_downY;
-
       @Override
       public boolean onTouch(View v, MotionEvent event) {
         gestureDetector.onTouchEvent(event);
 
-        if (event.getAction() == MotionEvent.ACTION_UP) {
-          checkScrollStoppedTask.run();
+        if (event.getAction() == MotionEvent.ACTION_DOWN &&
+                (customSettings.disableHorizontalScroll || customSettings.disableVerticalScroll)) {
+          syncScrollLockPosition();
         }
 
-        if (customSettings.disableHorizontalScroll && customSettings.disableVerticalScroll) {
-          return (event.getAction() == MotionEvent.ACTION_MOVE);
-        } else if (customSettings.disableHorizontalScroll || customSettings.disableVerticalScroll) {
-          switch (event.getAction()) {
-            case MotionEvent.ACTION_DOWN: {
-              // save the x
-              m_downX = event.getX();
-              // save the y
-              m_downY = event.getY();
-              break;
-            }
-            case MotionEvent.ACTION_MOVE:
-            case MotionEvent.ACTION_CANCEL:
-            case MotionEvent.ACTION_UP: {
-              if (customSettings.disableHorizontalScroll) {
-                // set x so that it doesn't move
-                event.setLocation(m_downX, event.getY());
-              } else {
-                // set y so that it doesn't move
-                event.setLocation(event.getX(), m_downY);
-              }
-              break;
-            }
-          }
+        if (event.getAction() == MotionEvent.ACTION_UP) {
+          checkScrollStoppedTask.run();
         }
         return false;
       }
@@ -634,6 +614,36 @@ final public class InAppWebView extends InputAwareWebView implements InAppWebVie
       }
     }
     this.userContentController.addUserOnlyScripts(this.initialUserOnlyScripts);
+  }
+
+  private void syncScrollLockPosition() {
+    lockedScrollX = super.getScrollX();
+    lockedScrollY = super.getScrollY();
+  }
+
+  private int getLockedScrollX(int x) {
+    return customSettings.disableHorizontalScroll ? lockedScrollX : x;
+  }
+
+  private int getLockedScrollY(int y) {
+    return customSettings.disableVerticalScroll ? lockedScrollY : y;
+  }
+
+  private void restoreLockedScroll(int x, int y) {
+    int targetX = getLockedScrollX(x);
+    int targetY = getLockedScrollY(y);
+    if (targetX == x && targetY == y) {
+      return;
+    }
+    if (isRestoringScrollLock) {
+      return;
+    }
+    isRestoringScrollLock = true;
+    try {
+      super.scrollTo(targetX, targetY);
+    } finally {
+      isRestoringScrollLock = false;
+    }
   }
 
   public void setIncognito(boolean enabled) {
@@ -1143,6 +1153,11 @@ final public class InAppWebView extends InputAwareWebView implements InAppWebVie
     if (newSettingsMap.get("disableHorizontalScroll") != null && customSettings.disableHorizontalScroll != newCustomSettings.disableHorizontalScroll)
       setHorizontalScrollBarEnabled(!newCustomSettings.disableHorizontalScroll && newCustomSettings.horizontalScrollBarEnabled);
 
+    if ((newSettingsMap.get("disableVerticalScroll") != null && customSettings.disableVerticalScroll != newCustomSettings.disableVerticalScroll) ||
+            (newSettingsMap.get("disableHorizontalScroll") != null && customSettings.disableHorizontalScroll != newCustomSettings.disableHorizontalScroll)) {
+      syncScrollLockPosition();
+    }
+
     if (newSettingsMap.get("overScrollMode") != null && !customSettings.overScrollMode.equals(newCustomSettings.overScrollMode))
       setOverScrollMode(newCustomSettings.overScrollMode);
 
@@ -1400,33 +1415,51 @@ final public class InAppWebView extends InputAwareWebView implements InAppWebVie
                                  int oldY) {
     super.onScrollChanged(x, y, oldX, oldY);
 
+    int lockedX = getLockedScrollX(x);
+    int lockedY = getLockedScrollY(y);
+    if (!isRestoringScrollLock && (lockedX != x || lockedY != y)) {
+      restoreLockedScroll(x, y);
+      return;
+    }
+
+    if (!customSettings.disableHorizontalScroll) {
+      lockedScrollX = lockedX;
+    }
+    if (!customSettings.disableVerticalScroll) {
+      lockedScrollY = lockedY;
+    }
+
     if (floatingContextMenu != null) {
       floatingContextMenu.setAlpha(0f);
       floatingContextMenu.setVisibility(View.GONE);
     }
 
-    if (channelDelegate != null) channelDelegate.onScrollChanged(x, y);
+    if (channelDelegate != null) channelDelegate.onScrollChanged(lockedX, lockedY);
   }
 
   public void scrollTo(Integer x, Integer y, Boolean animated) {
+    int targetX = getLockedScrollX(x);
+    int targetY = getLockedScrollY(y);
     if (animated) {
-      PropertyValuesHolder pvhX = PropertyValuesHolder.ofInt("scrollX", x);
-      PropertyValuesHolder pvhY = PropertyValuesHolder.ofInt("scrollY", y);
+      PropertyValuesHolder pvhX = PropertyValuesHolder.ofInt("scrollX", targetX);
+      PropertyValuesHolder pvhY = PropertyValuesHolder.ofInt("scrollY", targetY);
       ObjectAnimator anim = ObjectAnimator.ofPropertyValuesHolder(this, pvhX, pvhY);
       anim.setDuration(300).start();
     } else {
-      scrollTo(x, y);
+      scrollTo(targetX, targetY);
     }
   }
 
   public void scrollBy(Integer x, Integer y, Boolean animated) {
+    int targetX = getLockedScrollX(getScrollX() + x);
+    int targetY = getLockedScrollY(getScrollY() + y);
     if (animated) {
-      PropertyValuesHolder pvhX = PropertyValuesHolder.ofInt("scrollX", getScrollX() + x);
-      PropertyValuesHolder pvhY = PropertyValuesHolder.ofInt("scrollY", getScrollY() + y);
+      PropertyValuesHolder pvhX = PropertyValuesHolder.ofInt("scrollX", targetX);
+      PropertyValuesHolder pvhY = PropertyValuesHolder.ofInt("scrollY", targetY);
       ObjectAnimator anim = ObjectAnimator.ofPropertyValuesHolder(this, pvhX, pvhY);
       anim.setDuration(300).start();
     } else {
-      scrollBy(x, y);
+      scrollTo(targetX, targetY);
     }
   }
 
@@ -1583,6 +1616,13 @@ final public class InAppWebView extends InputAwareWebView implements InAppWebVie
   protected void onOverScrolled(int scrollX, int scrollY, boolean clampedX, boolean clampedY) {
     super.onOverScrolled(scrollX, scrollY, clampedX, clampedY);
 
+    int lockedX = getLockedScrollX(scrollX);
+    int lockedY = getLockedScrollY(scrollY);
+    if (!isRestoringScrollLock && (lockedX != scrollX || lockedY != scrollY)) {
+      restoreLockedScroll(scrollX, scrollY);
+      return;
+    }
+
     boolean overScrolledHorizontally = canScrollHorizontally() && clampedX;
     boolean overScrolledVertically = canScrollVertically() && clampedY;
 
@@ -1598,7 +1638,7 @@ final public class InAppWebView extends InputAwareWebView implements InAppWebVie
 
     if (overScrolledHorizontally || overScrolledVertically) {
       if (channelDelegate != null)
-        channelDelegate.onOverScrolled(scrollX, scrollY, overScrolledHorizontally, overScrolledVertically);
+        channelDelegate.onOverScrolled(lockedX, lockedY, overScrolledHorizontally, overScrolledVertically);
     }
   }
 
