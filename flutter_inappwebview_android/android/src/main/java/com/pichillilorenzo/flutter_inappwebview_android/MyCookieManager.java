@@ -434,6 +434,7 @@ public class MyCookieManager extends ChannelDelegateImpl {
     }
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
       cookieManager.flush();
+      result.success(true);
     } else if (plugin != null) {
       CookieSyncManager cookieSyncMngr = CookieSyncManager.createInstance(plugin.applicationContext);
       cookieSyncMngr.sync();
